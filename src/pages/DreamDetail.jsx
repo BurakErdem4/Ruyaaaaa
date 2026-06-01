@@ -23,13 +23,26 @@ const DreamDetail = () => {
 
   if (!dream) return <div className="p-10 text-center text-white">Rüya bulunamadı.</div>;
 
-  const handleGenerateImage = () => {
+  const handleGenerateImage = async () => {
     setIsGenerating(true);
-    // Simüle edilen DALL-E bekleme süresi
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: dream.text })
+      });
+      
+      if (!response.ok) throw new Error('API Hatası');
+      
+      const data = await response.json();
+      setImageForDream(dream.id, data.image_url);
+    } catch (error) {
+      console.error('Görsel oluşturulamadı:', error);
+      // Hata durumunda Fallback görsel atıyoruz
       setImageForDream(dream.id, "https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1200&auto=format&fit=crop");
+    } finally {
       setIsGenerating(false);
-    }, 4000);
+    }
   };
 
   const getInterpretationText = () => {
@@ -44,84 +57,82 @@ const DreamDetail = () => {
 
   return (
     <div className="min-h-screen w-full bg-dream-dark text-white pb-32">
-      {/* Header Image (AI Generated Mock) */}
-      <div className="relative w-full h-72 bg-[#0A0D18]">
-        <div className="absolute inset-0 bg-gradient-to-t from-dream-dark via-dream-dark/60 to-transparent z-10" />
+      {/* Nav */}
+      <div className="w-full p-6 pt-8 flex justify-between items-center">
+        <button 
+          onClick={() => navigate(-1)}
+          className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10 hover:bg-white/10 transition-colors"
+        >
+          <ArrowLeft size={20} className="text-white" />
+        </button>
         
-        <AnimatePresence mode="wait">
-          {isGenerating ? (
-            <motion.div 
-              key="loading"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 flex flex-col items-center justify-center z-0 opacity-80"
-            >
-              <div className="relative">
-                <div className="absolute inset-0 bg-dream-accent blur-xl rounded-full opacity-30 animate-pulse" />
-                <Loader2 size={40} className="text-dream-accent animate-spin relative z-10" />
-              </div>
-              <p className="text-xs tracking-[0.2em] uppercase text-dream-accent/70 mt-4 animate-pulse">DALL-E Görsel Üretiyor...</p>
-            </motion.div>
-          ) : dream.imageUrl ? (
-            <motion.img 
-              key="image"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.6 }}
-              transition={{ duration: 1 }}
-              src={dream.imageUrl} 
-              alt="Dream visualization" 
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <motion.div 
-              key="no-image"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="absolute inset-0 flex items-center justify-center z-0"
-            >
-              <button 
-                onClick={handleGenerateImage}
-                className="flex items-center gap-2 px-6 py-3 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-white/50 hover:text-white/80 transition-all"
-              >
-                <ImageIcon size={20} />
-                <span className="font-light text-sm tracking-wider">Yapay Zeka ile Görselleştir</span>
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Nav */}
-        <div className="absolute top-0 left-0 w-full p-6 z-20 flex justify-between items-center mt-6">
+        <div className="flex gap-2">
           <button 
-            onClick={() => navigate(-1)}
-            className="w-10 h-10 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center border border-white/10 hover:bg-white/10 transition-colors"
+            onClick={() => toggleFavorite(dream.id)}
+            className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10 hover:bg-white/10 transition-colors"
           >
-            <ArrowLeft size={20} className="text-white" />
+            <Star size={20} className={dream.isFavorite ? "text-yellow-500 fill-yellow-500" : "text-white"} />
           </button>
-          
-          <div className="flex gap-2">
-            <button 
-              onClick={() => toggleFavorite(dream.id)}
-              className="w-10 h-10 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center border border-white/10 hover:bg-white/10 transition-colors"
-            >
-              <Star size={20} className={dream.isFavorite ? "text-yellow-500 fill-yellow-500" : "text-white"} />
-            </button>
-            <button 
-              onClick={handleDelete}
-              className="w-10 h-10 rounded-full bg-black/20 backdrop-blur-md flex items-center justify-center border border-white/10 hover:bg-red-500/20 hover:text-red-400 transition-colors text-white"
-            >
-              <Trash2 size={20} />
-            </button>
-          </div>
+          <button 
+            onClick={handleDelete}
+            className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10 hover:bg-red-500/20 hover:text-red-400 transition-colors text-white"
+          >
+            <Trash2 size={20} />
+          </button>
         </div>
       </div>
 
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="px-6 -mt-16 relative z-20 max-w-md mx-auto flex flex-col gap-6"
+        className="px-6 max-w-md mx-auto flex flex-col gap-6"
       >
+        {/* Görsel Kutusu */}
+        <div className="relative w-full aspect-square rounded-3xl overflow-hidden bg-black/40 border border-white/10 shadow-lg">
+          <AnimatePresence mode="wait">
+            {isGenerating ? (
+              <motion.div 
+                key="loading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 flex flex-col items-center justify-center z-10"
+              >
+                <div className="relative">
+                  <div className="absolute inset-0 bg-dream-accent blur-xl rounded-full opacity-30 animate-pulse" />
+                  <Loader2 size={40} className="text-dream-accent animate-spin relative z-10" />
+                </div>
+                <p className="text-xs tracking-[0.2em] uppercase text-dream-accent/70 mt-4 animate-pulse">Yapay Zeka Çiziyor...</p>
+              </motion.div>
+            ) : dream.imageUrl ? (
+              <motion.img 
+                key="image"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5 }}
+                src={dream.imageUrl} 
+                alt="Dream visualization" 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <motion.div 
+                key="no-image"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="absolute inset-0 flex items-center justify-center z-10"
+              >
+                <button 
+                  onClick={handleGenerateImage}
+                  className="flex items-center gap-2 px-6 py-3 rounded-full bg-dream-accent/20 border border-dream-accent/30 hover:bg-dream-accent/40 text-dream-accent transition-all"
+                >
+                  <ImageIcon size={20} />
+                  <span className="font-light text-sm tracking-wider">Görselleştir</span>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         <div className="flex flex-col gap-2">
           <span className="text-xs uppercase tracking-widest text-dream-accent">{dream.date}</span>
           <p className="text-lg font-light leading-relaxed text-white/90">"{dream.text}"</p>

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from google import genai
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 app = FastAPI(title="Yapay Zeka Destekli Rüya Yorumlama - Ücretsiz Gemini API")
 
@@ -26,6 +26,12 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 class DreamRequest(BaseModel):
     text: str
     zodiac: str
+
+class ImageRequest(BaseModel):
+    text: str
+
+class ImageResponse(BaseModel):
+    image_url: str
 
 class DreamResponse(BaseModel):
     sentiment: str
@@ -84,21 +90,84 @@ SADECE TEK BİR KELİME YAZ. Başka hiçbir şey ekleme.""",
             return ["nature"]
 
     @staticmethod
-    def generate_dream_image(dream_text: str, keywords: List[str]) -> str:
-        """LoremFlickr kullanarak kelimeye uygun GERÇEK bir fotoğraf getirir (Galaksi yok!)."""
-        if not keywords or len(keywords) == 0:
-            main_keyword = "nature"
-        else:
-            main_keyword = keywords[0]
+    def optimize_image_prompt(dream_text: str) -> str:
+        """Gemini kullanarak rüya metnini profesyonel bir İngilizce görsel promptuna dönüştürür."""
+        prompt_instruction = "Sen profesyonel bir yapay zeka prompt mühendisisin. Sadece İngilizce prompt metni üret, başka hiçbir açıklama yazma."
+        prompt_text = f"Kullanıcı şöyle bir rüya görmüş: [{dream_text}]. Bu rüyayı sürrealist, detaylı ve yüksek kaliteli bir tablo olarak çizdirmek için İngilizce bir resim oluşturma promptu (image generation prompt) yazar mısın? Sadece prompt metnini döndür."
+        return DreamAI.call_gemini(prompt=prompt_text, system_instruction=prompt_instruction)
 
-        # İngilizce harflere uygun hale getiriyoruz
-        clean_keyword = urllib.parse.quote(main_keyword)
+    @staticmethod
+    def generate_dream_image(dream_text: str) -> str:
+        """Gemini ile prompt'u iyileştirip Pollinations AI üzerinden görsel oluşturur."""
+        optimized_prompt = DreamAI.optimize_image_prompt(dream_text)
+        
+        # Eğer API hatası gelirse veya geçersiz bir yanıt dönerse varsayılan bir prompt kullan
+        if not optimized_prompt or "Analiz motoru" in optimized_prompt:
+            optimized_prompt = f"A surreal, highly detailed and high quality painting of this dream: {dream_text}"
+
+        # İngilizce URL için uygun hale getiriyoruz
+        clean_prompt = urllib.parse.quote(optimized_prompt)
         
         # Aynı rüyayı yazarsan farklı resim gelsin diye kilit numarası (seed)
-        lock_id = random.randint(1, 10000)
+        lock_id = random.randint(1, 1000000)
         
-        # LoremFlickr'ın kemik gibi çalışan fotoğraf bulma linki
-        return f"https://loremflickr.com/1024/1024/{clean_keyword}?lock={lock_id}"
+        # Pollinations AI görsel oluşturma linki
+        return f"https://image.pollinations.ai/prompt/{clean_prompt}?width=1024&height=1024&nologo=true&seed={lock_id}"
+
+    @staticmethod
+    def analyze_dream_all_in_one(dream_text: str, zodiac: str) -> dict:
+        import json
+        system_instruction = """Sen profesyonel bir rüya analisti ve prompt mühendisisin.
+Aşağıdaki rüyayı incele ve ÇIKTIYI SADECE GEÇERLİ BİR JSON OLARAK DÖN.
+JSON formatı birebir şu şekilde olmalı:
+{
+  "sentiment": "SADECE tek kelime (Pozitif, Negatif veya Nötr)",
+  "classic_meaning": "Geleneksel rüya sembollerine göre yorum",
+  "freud_meaning": "Freudyen psikanaliz teorilerine göre yorum",
+  "jung_meaning": "Jungiyen arketiplere göre analiz",
+  "islamic_meaning": "İslami rüya tabiri",
+  "astrological_meaning": "Kullanıcının burcuna göre astrolojik yorum",
+  "image_prompt": "Rüyayı sürrealist, detaylı, yüksek kaliteli bir tablo olarak çizdirmek için İNGİLİZCE resim oluşturma promptu. (Sadece prompt metni)",
+  "keywords": ["İNGİLİZCE EN ÖNEMLİ TEK NESNE KELİMESİ"]
+}
+Asla markdown kullanma, sadece saf JSON metni dön."""
+        prompt = f"Rüya: {dream_text}\nKullanıcının Burcu: {zodiac}"
+        
+        try:
+            response = client.models.generate_content(
+                model='models/gemini-2.5-flash',
+                contents=prompt,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.7,
+                    response_mime_type="application/json"
+                )
+            )
+            return json.loads(response.text.strip())
+        except Exception as e:
+            print(f"JSON Çözümleme Hatası veya API Limiti: {e}")
+            return {
+                "sentiment": "Nötr",
+                "classic_meaning": "Analiz motoru şu an meşgul veya API limiti aşıldı, lütfen daha sonra tekrar deneyin.",
+                "freud_meaning": "Analiz motoru şu an meşgul, lütfen daha sonra tekrar deneyin.",
+                "jung_meaning": "Analiz motoru şu an meşgul, lütfen daha sonra tekrar deneyin.",
+                "islamic_meaning": "Analiz motoru şu an meşgul, lütfen daha sonra tekrar deneyin.",
+                "astrological_meaning": "Analiz motoru şu an meşgul, lütfen daha sonra tekrar deneyin.",
+                "image_prompt": f"A surreal painting of this dream: {dream_text}",
+                "keywords": ["dream"]
+            }
+
+@app.post("/api/generate-image", response_model=ImageResponse)
+async def generate_image_endpoint(request: ImageRequest):
+    try:
+        cleaned_text = DreamAI.pre_process_text(request.text)
+        if not cleaned_text:
+            raise HTTPException(status_code=400, detail="Rüya içeriği boş olamaz.")
+        
+        img_url = DreamAI.generate_dream_image(cleaned_text)
+        return ImageResponse(image_url=img_url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Görsel oluşturma hatası: {str(e)}")
 
 @app.post("/api/analyze-dream", response_model=DreamResponse)
 async def analyze_dream_endpoint(request: DreamRequest):
@@ -107,52 +176,24 @@ async def analyze_dream_endpoint(request: DreamRequest):
         if not cleaned_text:
             raise HTTPException(status_code=400, detail="Rüya içeriği boş olamaz.")
 
-        # Duygu Analizi
-        sentiment = DreamAI.call_gemini(
-            prompt=cleaned_text,
-            system_instruction="Sen bir psikolojik dil analistisin. Rüyanın genel duygusal atmosferini analiz et ve SADECE tek bir kelimeyle 'Pozitif', 'Negatif' veya 'Nötr' olarak yanıt dön."
-        )
-
-        # 5 Farklı Akademik Perspektif
-        classic_m = DreamAI.call_gemini(
-            prompt=cleaned_text,
-            system_instruction="Sen geleneksel rüya sembolleri uzmanısın. Rüyadaki temel objeleri kültürel rüya metaforlarına göre genel bir dille yorumla."
-        )
+        # Tek bir Gemini isteği ile TÜM JSON verisini alıyoruz
+        data = DreamAI.analyze_dream_all_in_one(cleaned_text, request.zodiac)
         
-        freud_m = DreamAI.call_gemini(
-            prompt=cleaned_text,
-            system_instruction="Sen Freudyen bir psikanalistsin. Rüyayı Sigmund Freud'un rüya tabiri teorilerine, bastırılmış bilinçaltı arzularına ve id/ego/süperego çatışmalarına odaklanarak profesyonelce yorumla."
-        )
-        
-        jung_m = DreamAI.call_gemini(
-            prompt=cleaned_text,
-            system_instruction="Sen Jungiyen bir analitik psikologsun. Rüyayı Carl Gustav Jung'un kolektif bilinçaltı ögelerine ve arketiplere (Gölge, Anima) odaklanarak derinlemesine analiz et."
-        )
-        
-        islamic_m = DreamAI.call_gemini(
-            prompt=cleaned_text,
-            system_instruction="Sen İslami rüya tabirleri uzmanısın. Rüyayı İbn-i Sirin gibi geleneksel İslam alimlerinin rüya yorumlama metodolojilerine göre yapıcı bir dille açıkla."
-        )
-        
-        astro_m = DreamAI.call_gemini(
-            prompt=cleaned_text,
-            system_instruction=f"Sen bir astro-psikologsun. Rüyayı kullanıcının burcu olan '{request.zodiac}' burcu bağlamında, karakter özellikleri ve sezgileriyle ilişkilendirerek yorumla."
-        )
-
-        # Anahtar kelimeler ve Görsel Ataması
-        keywords = DreamAI.extract_keywords_from_dream(cleaned_text)
-        img_url = DreamAI.generate_dream_image(cleaned_text, keywords)
+        # Image prompt'unu URL'ye dönüştür
+        image_prompt = data.get("image_prompt", f"A surreal painting of this dream: {cleaned_text}")
+        clean_prompt = urllib.parse.quote(image_prompt)
+        lock_id = random.randint(1, 1000000)
+        img_url = f"https://image.pollinations.ai/prompt/{clean_prompt}?width=1024&height=1024&nologo=true&seed={lock_id}"
 
         return DreamResponse(
-            sentiment=sentiment,
-            classic_meaning=classic_m,
-            freud_meaning=freud_m,
-            jung_meaning=jung_m,
-            islamic_meaning=islamic_m,
-            astrological_meaning=astro_m,
-            keywords=keywords,
+            sentiment=data.get("sentiment", "Nötr"),
+            classic_meaning=data.get("classic_meaning", ""),
+            freud_meaning=data.get("freud_meaning", ""),
+            jung_meaning=data.get("jung_meaning", ""),
+            islamic_meaning=data.get("islamic_meaning", ""),
+            astrological_meaning=data.get("astrological_meaning", ""),
+            keywords=data.get("keywords", ["dream"]),
             image_url=img_url
         )
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sistem analiz motoru hatası: {str(e)}")

@@ -99,7 +99,7 @@ const Home = () => {
     );
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!dreamText.trim()) return;
     
     if (isListening && recognitionRef.current) {
@@ -109,24 +109,44 @@ const Home = () => {
     
     setIsAnalyzing(true);
     
-    setTimeout(() => {
-      setIsAnalyzing(false);
+    try {
+      const response = await fetch('/api/analyze-dream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: dreamText,
+          zodiac: userProfile?.zodiac || 'Bilinmiyor'
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('API Hatası');
+      }
+      
+      const data = await response.json();
+      
       const newDreamId = addDream({
         text: dreamText,
-        keywords: selectedTags.length > 0 ? selectedTags : ["GİZEM", "BİLİNÇALTI"],
+        // Eğer kullanıcı etiket seçtiyse onları ekle, yoksa yapay zekanın bulduğu anahtar kelimeleri ekle
+        keywords: selectedTags.length > 0 ? selectedTags : data.keywords,
         interpretations: {
-          classic: "Rüyanızdaki imgeler, yakın zamanda hayatınızda belirsizliklerle yüzleşeceğinize ve bunları aşarak feraha çıkacağınıza işaret ediyor.",
-          freud: "Kendi yazdığınız bu metin, bilinçaltınızdaki günlük endişelerin ve saklı tuttuğunuz dürtülerin doğrudan dışavurumudur.",
-          jung: "Burada kullandığınız kelimeler, kolektif bilinçdışınızdan gelen uyarıcı arketipsel figürleri çağrıştırıyor. Bireyleşme yolculuğunuzda önemli bir adım.",
-          islamic: "Bu rüya, iç huzuru bulmak için manevi yönünüze daha fazla ağırlık vermeniz gerektiğine dair ilahi bir işarettir.",
-          astrological: `${userProfile?.zodiac || 'Burcunuz'} etkisiyle gezegensel transitler, bu rüyanın karmik döngülerinizle bağlantılı olduğunu gösteriyor.`
+          classic: data.classic_meaning,
+          freud: data.freud_meaning,
+          jung: data.jung_meaning,
+          islamic: data.islamic_meaning,
+          astrological: data.astrological_meaning
         },
-        sentiment: "neutral",
-        imageUrl: null
+        sentiment: data.sentiment,
+        imageUrl: data.image_url
       });
       
       navigate(`/dream/${newDreamId}`);
-    }, 2500);
+    } catch (error) {
+      console.error("Analiz motoru hatası:", error);
+      alert("Rüyanız analiz edilirken bir hata oluştu (Sunucu kapalı veya API limiti aşılmış olabilir). Lütfen tekrar deneyin.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
