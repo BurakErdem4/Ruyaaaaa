@@ -6,11 +6,18 @@ import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Mail, Lock, Calendar, Loader2 } from 'lucide-react';
 import { useDreamContext } from '../context/DreamContext';
+import { getZodiacSign } from '../utils/zodiac';
 
 const Register = () => {
   const navigate = useNavigate();
   const { setUserProfile } = useDreamContext();
-  const [formData, setFormData] = useState({ email: '', password: '', dob: '' });
+  const [formData, setFormData] = useState({ 
+    email: '', 
+    password: '', 
+    day: '01', 
+    month: '1', 
+    year: '2000' 
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -24,10 +31,14 @@ const Register = () => {
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
       const user = userCredential.user;
 
-      // 2. Firestore "kullanicilar" koleksiyonuna UID ile kaydet
+      // 2. Zodiac ve DOB hesapla
+      const dobStr = `${formData.year}-${String(formData.month).padStart(2, '0')}-${String(formData.day).padStart(2, '0')}`;
+      const zodiac = getZodiacSign(parseInt(formData.day), parseInt(formData.month));
+
       const userData = {
         email: formData.email,
-        dob: formData.dob,
+        dob: dobStr,
+        zodiac: zodiac || 'Bilinmiyor',
         createdAt: new Date().toISOString()
       };
       
@@ -95,16 +106,53 @@ const Register = () => {
           </div>
 
           <div className="relative">
-            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" size={20} />
-            <input 
-              type="date"
-              required
-              value={formData.dob}
-              onChange={(e) => setFormData({...formData, dob: e.target.value})}
-              className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white focus:outline-none focus:border-dream-accent transition-colors"
-              style={{ colorScheme: 'dark' }}
-            />
-            <p className="text-[10px] text-white/40 mt-1 ml-2">Astrolojik rüya analizi için doğum tarihiniz gereklidir.</p>
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none">
+              <Calendar size={20} />
+            </div>
+            
+            <div className="w-full bg-black/20 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 flex items-center gap-2 focus-within:border-dream-accent transition-colors">
+              <span className="text-white/30 text-sm hidden sm:inline mr-2">Doğum Tarihi:</span>
+              
+              <select 
+                value={formData.day}
+                onChange={(e) => setFormData({...formData, day: e.target.value})}
+                className="bg-transparent text-white outline-none cursor-pointer text-sm flex-1"
+                style={{ colorScheme: 'dark' }}
+              >
+                {[...Array(31).keys()].map(d => (
+                  <option key={d + 1} value={d + 1} className="bg-[#0E0D1F] text-white">
+                    {String(d + 1).padStart(2, '0')}
+                  </option>
+                ))}
+              </select>
+
+              <select 
+                value={formData.month}
+                onChange={(e) => setFormData({...formData, month: e.target.value})}
+                className="bg-transparent text-white outline-none cursor-pointer text-sm flex-1 border-x border-white/10 px-2 mx-1"
+                style={{ colorScheme: 'dark' }}
+              >
+                {['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'].map((m, idx) => (
+                  <option key={idx + 1} value={idx + 1} className="bg-[#0E0D1F] text-white">
+                    {m}
+                  </option>
+                ))}
+              </select>
+
+              <select 
+                value={formData.year}
+                onChange={(e) => setFormData({...formData, year: e.target.value})}
+                className="bg-transparent text-white outline-none cursor-pointer text-sm flex-1"
+                style={{ colorScheme: 'dark' }}
+              >
+                {Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i).map(y => (
+                  <option key={y} value={y} className="bg-[#0E0D1F] text-white">
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-[10px] text-white/40 mt-1 ml-2">Astrolojik rüya analizi (Burç) için doğum tarihiniz gereklidir.</p>
           </div>
 
           <motion.button
