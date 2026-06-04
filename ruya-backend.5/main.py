@@ -5,6 +5,7 @@ from typing import List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends
+from fastapi.staticfiles import StaticFiles
 
 from auth import get_current_user
 from pydantic import BaseModel
@@ -22,6 +23,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Statik dosyalar için (resimleri sunmak için)
+os.makedirs("static/images", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Ücretsiz Google Gemini İstemcisi
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -116,21 +121,52 @@ SADECE TEK BİR KELİME YAZ. Başka hiçbir şey ekleme.""",
             optimized_prompt = f"A surreal, highly detailed and high quality painting of this dream: {image_prompt_text}"
 
         try:
-            from openai import OpenAI
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            response = client.images.generate(
-                model="dall-e-3",
-                prompt=optimized_prompt,
-                size="1024x1024",
-                quality="standard",
-                n=1,
-            )
-            return response.data[0].url
+            # Sadece OpenAI API Key var mı kontrol et
+            openai_key = os.getenv("OPENAI_API_KEY")
+            if openai_key and len(openai_key) > 10:
+                from openai import OpenAI
+                client = OpenAI(api_key=openai_key)
+                response = client.images.generate(
+                    model="gpt-image-2",
+                    prompt=optimized_prompt,
+                    size="1024x1024",
+                    quality="auto",
+                    n=1,
+                )
+                
+                # gpt-image-2 varsayılan olarak b64_json dönebilir
+                if hasattr(response.data[0], 'b64_json') and response.data[0].b64_json:
+                    import base64
+                    import uuid
+                    
+                    filename = f"dream_{uuid.uuid4().hex}.png"
+                    filepath = os.path.join("static", "images", filename)
+                    
+                    # Base64'ü çöz ve kaydet
+                    image_data = base64.b64decode(response.data[0].b64_json)
+                    with open(filepath, "wb") as f:
+                        f.write(image_data)
+                        
+                    # Firebase boyut sınırına takılmamak için URL olarak dön
+                    return f"http://127.0.0.1:8000/static/images/{filename}"
+                elif hasattr(response.data[0], 'url') and response.data[0].url:
+                    return response.data[0].url
+                else:
+                    raise Exception("API'den geçerli bir görsel URL'si veya verisi alınamadı.")
+            
+            # Eğer API Key yoksa
+            raise Exception("OpenAI API key not found")
+            
         except Exception as e:
-            print(f"OpenAI Image Error: {e}")
-            clean_prompt = urllib.parse.quote(optimized_prompt)
-            lock_id = random.randint(1, 1000000)
-            return f"https://image.pollinations.ai/prompt/{clean_prompt}?width=1024&height=1024&nologo=true&seed={lock_id}"
+            print(f"Image Generation Error: {e}")
+            import random
+            fallback_images = [
+                "https://images.unsplash.com/photo-1505506874110-6a7a4c747805?q=80&w=1200&auto=format&fit=crop", # Galaksi
+                "https://images.unsplash.com/photo-1493514789931-586cb221dcea?q=80&w=1200&auto=format&fit=crop", # Bulutlar
+                "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=80&w=1200&auto=format&fit=crop", # Uzay
+                "https://images.unsplash.com/photo-1507608616759-54f48f0af0ee?q=80&w=1200&auto=format&fit=crop"  # Sürreal neon
+            ]
+            return random.choice(fallback_images)
 
     @staticmethod
     def analyze_dream_all_in_one(dream_text: str, zodiac: str) -> dict:

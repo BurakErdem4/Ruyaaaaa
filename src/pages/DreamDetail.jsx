@@ -44,12 +44,14 @@ const DreamDetail = () => {
         setIsGenerating(false);
       };
       img.onerror = () => {
-        throw new Error('Resim yüklenemedi');
+        console.error('Resim yüklenemedi.');
+        alert("Görsel yüklenirken bir sorun oluştu.");
+        setIsGenerating(false);
       };
       img.src = finalUrl;
     } catch (error) {
       console.error('Görsel oluşturulamadı:', error);
-      setImageForDream(dream.id, "https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1200&auto=format&fit=crop");
+      alert("Görsel oluşturulamadı. Lütfen tekrar deneyin.");
       setIsGenerating(false);
     }
   };

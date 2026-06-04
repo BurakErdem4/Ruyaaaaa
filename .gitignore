@@ -39,3 +39,6 @@ __pycache__/
 venv/
 *.txt
 serviceAccountKey.json
+
+# Generated images
+ruya-backend.5/static/images/*.png
